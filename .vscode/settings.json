@@ -13,5 +13,6 @@
     "--background-index",
     "--query-driver=**",
     "--compile-commands-dir=/home/mm/app/esp/env_sp/build"
-  ]
+  ],
+  "C_Cpp.default.compilerPath": "/home/mm/.espressif/tools/esp-clang/esp-20.1.1_20250829/esp-clang/bin/clang"
 }
