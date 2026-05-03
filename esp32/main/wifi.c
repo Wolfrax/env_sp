@@ -20,7 +20,7 @@ char hostname[HOSTNAME_LEN] = "UNKNOWN";
 char current_ssid[SSID_LEN] = "UNKNOWN";
 char ssid[SSID_LEN] = {0};
 char password[PASSWORD_LEN] = {0};
-
+char macstr[MAC_STR_LEN] = {0};
 
 esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 {
@@ -67,8 +67,8 @@ static void wifi_credentials_init(void)
     if (wifi_credentials_load(ssid, sizeof(ssid), password, sizeof(password)) != ESP_OK) {
         ESP_LOGI(TAG, "No WiFi credentials found in NVS");
 
-        strcpy(ssid, "YourSSID");
-        strcpy(password, "YourPassword");
+        strcpy(ssid, "G10");
+        strcpy(password, "Rafmagn1");
         wifi_credentials_save(ssid, password);
     }
 }
@@ -111,11 +111,12 @@ void wifi_init_base(void)
 
     // Set hostname to "esp32-XXXXXX" where XXXXXX are the last 3 bytes of the MAC address
     // which will be used in DHCP and mDNS responses 
-    uint8_t mac[6];
+    uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
     snprintf(hostname, sizeof(hostname), "esp32-%02X%02X%02X", mac[3], mac[4], mac[5]);
-    
+    snprintf(macstr, sizeof(macstr), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
     // Set the hostname for DHCP, visible in the router's client list
     esp_netif_set_hostname(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), hostname);
 

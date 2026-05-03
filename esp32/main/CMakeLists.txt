@@ -5,5 +5,5 @@ idf_component_register(
         "main.c"  
         # "i2c_scanner.c"
     INCLUDE_DIRS "."
-    PRIV_REQUIRES mdns esp_wifi esp_event esp_netif nvs_flash esp_http_client esp_driver_i2c
+    PRIV_REQUIRES mdns esp_wifi esp_event esp_netif nvs_flash esp_http_client esp_driver_i2c lwip
 )

@@ -76,6 +76,17 @@ Desktop.ini
 # Optional VS Code control
 #.vscode/
 .vscode/*
+.DS_Store
 !.vscode/settings.json
 !.vscode/launch.json
 !.vscode/tasks.json
+
+# ESP-IDF
+esp32/build/
+esp32/sdkconfig.old
+
+# Python
+server/.venv/
+__pycache__/
+*.pyc
+.env

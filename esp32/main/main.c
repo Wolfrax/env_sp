@@ -1,46 +1,37 @@
-#include <stdio.h>
+#include <assert.h>
+#include <inttypes.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <dirent.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <errno.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <assert.h>
-#include <stdlib.h>
-#include <ctype.h>
+
+#include "cJSON.h"
+#include "esp_http_client.h"
+#include "esp_log.h"
+#include "esp_sntp.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "nvs_flash.h"
 
 #include "globals.h"
-#include "esp_sntp.h"
-#include "esp_system.h"
-#include "esp_mac.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/semphr.h"
-#include "esp_log.h"
-#include "esp_random.h"
-#include "esp_event.h"
-#include "nvs_flash.h"
-#include "esp_netif.h"
-#include "esp_http_client.h"
-#include "nvs.h"
-#include "mdns.h"
 #include "i2c_reader.h"
 #include "wifi.h"
-#include "cJSON.h"
 
+#if SIMULATE_SENSOR
+#include "esp_random.h"
+#endif
 
 /* ---------------- CONFIG ---------------- */
 
 #define SIMULATE_SENSOR 0
-#define SAMPLING_INTERVAL (60*1000)  // Sample every 10 minutes
+#define SAMPLING_INTERVAL (60*1000)
 #define LOG_WEB_BUF_SIZE 8192
 #define LOG_WEB_TMP_LINE 256
 
 /* ---------------- GLOBALS ---------------- */
 
-esp_http_client_handle_t client = NULL;
 static char starttime_str[64] = "UNKNOWN";
 static char log_web_buf[LOG_WEB_BUF_SIZE];
 static size_t log_web_head = 0;
@@ -57,7 +48,6 @@ typedef struct {
 } sample_t;
 
 static sample_t latest_sample = {0};
-
 
 /* ---------------- WEB LOG BUFFER ---------------- */
 
@@ -116,64 +106,9 @@ static void init_web_log_buffer(void)
     log_old_vprintf = esp_log_set_vprintf(log_web_vprintf);
 }
 
-/* ---------------- SENSOR ---------------- */
-
-esp_err_t http_event_handler(esp_http_client_event_t *evt)
-{
-    switch (evt->event_id) {
-
-    case HTTP_EVENT_ON_CONNECTED:
-        printf("Connected\n");
-        break;
-
-    case HTTP_EVENT_ON_HEADER:
-        printf("Header received\n");
-        break;
-
-    case HTTP_EVENT_ON_DATA:
-        printf("Received %d bytes\n", evt->data_len);
-        // Process evt->data here
-        break;
-
-    case HTTP_EVENT_ON_FINISH:
-        printf("Request finished\n");
-        break;
-
-    case HTTP_EVENT_DISCONNECTED:
-        printf("Disconnected\n");
-        break;
-
-    case HTTP_EVENT_ERROR:
-        printf("Error occurred\n");
-        break;
-
-    default:
-        break;
-    }
-    return ESP_OK;
-}
-
-static void init_client(void)
-{
-    esp_http_client_config_t config = {
-        .host = SERVER_HOST,
-        .path = SERVER_PATH,
-        .port = SERVER_PORT,
-        .method = HTTP_METHOD_POST,
-        .transport_type = HTTP_TRANSPORT_OVER_TCP,
-        .event_handler = http_event_handler,
-    };
-
-    client = esp_http_client_init(&config);
-    if (client == NULL) {
-        ESP_LOGE(TAG, "Failed to initialize HTTP client");
-    }   
-}
-
 char *make_post_json(void)
 {
     cJSON *root = cJSON_CreateObject();
-    cJSON *data = cJSON_CreateArray();
     cJSON *sample = cJSON_CreateObject();
     cJSON *node = cJSON_CreateObject();
 
@@ -182,8 +117,7 @@ char *make_post_json(void)
     cJSON_AddNumberToObject(sample, "h", latest_sample.h);
     cJSON_AddNumberToObject(sample, "p", latest_sample.p);
 
-    cJSON_AddItemToArray(data, sample);
-    cJSON_AddItemToObject(root, "data", data);
+    cJSON_AddItemToObject(root, "sample", sample);
 
     cJSON_AddStringToObject(root, "log", log_web_buf);
 
@@ -191,7 +125,7 @@ char *make_post_json(void)
     cJSON_AddStringToObject(node, "ip", ip_str);
     cJSON_AddStringToObject(node, "ssid", current_ssid);
     cJSON_AddStringToObject(node, "starttime", starttime_str);
-    cJSON_AddStringToObject(node, "mac", hostname);
+    cJSON_AddStringToObject(node, "mac", macstr);
     cJSON_AddItemToObject(root, "node", node);
 
     char *json = cJSON_PrintUnformatted(root);
@@ -206,6 +140,17 @@ static void send_to_server(void)
     char *post_data = make_post_json();
 
     if (post_data != NULL) {
+        esp_http_client_config_t config = {
+            .url = SERVER_URL,
+            .method = HTTP_METHOD_POST,
+        };
+
+        esp_http_client_handle_t client = esp_http_client_init(&config);
+        if (client == NULL) {
+            ESP_LOGE(TAG, "Failed to initialize HTTP client");
+            return;
+        }   
+
         esp_http_client_set_header(client, "Content-Type", "application/json");
         esp_http_client_set_post_field(client, post_data, strlen(post_data));
         esp_err_t err = esp_http_client_perform(client); 
@@ -302,8 +247,6 @@ void app_main(void)
 
     obtain_time();
     ESP_LOGI(TAG, "System time obtained: %s", starttime_str);
-
-    init_client();
 
 #if SIMULATE_SENSOR
 #else
