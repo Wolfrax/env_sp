@@ -8,12 +8,14 @@
 
 #include "cJSON.h"
 #include "esp_http_client.h"
-#include "esp_log.h"
 #include "esp_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "esp_sleep.h"
+#include "esp_log.h"
+#include "driver/gpio.h"
 
 #include "globals.h"
 #include "i2c_reader.h"
@@ -23,24 +25,11 @@
 #include "esp_random.h"
 #endif
 
-/* ---------------- CONFIG ---------------- */
-
 #define SIMULATE_SENSOR 0
-#define SAMPLING_INTERVAL (60*1000)
-#define LOG_WEB_BUF_SIZE 8192
-#define LOG_WEB_TMP_LINE 256
+#define SLEEP_INTERVAL (60*1000*1000) // 5 minutes = 300 * 1000 * 1000 microseconds
 
-/* ---------------- GLOBALS ---------------- */
-
-static char starttime_str[64] = "UNKNOWN";
-static char log_web_buf[LOG_WEB_BUF_SIZE];
-static size_t log_web_head = 0;
-static bool log_web_wrapped = false;
-static SemaphoreHandle_t log_web_mutex = NULL;
-static vprintf_like_t log_old_vprintf = NULL;
-
-
-/* ---------------- SAMPLE STRUCT ---------------- */
+RTC_DATA_ATTR static char starttime_str[64] = "UNKNOWN";
+RTC_DATA_ATTR static int boot_count = 0;
 
 typedef struct {
     char ts[32];
@@ -48,63 +37,6 @@ typedef struct {
 } sample_t;
 
 static sample_t latest_sample = {0};
-
-/* ---------------- WEB LOG BUFFER ---------------- */
-
-static void log_web_append(const char *s, size_t len)
-{
-    if (len == 0) return;
-
-    // If one message is larger than the whole buffer, keep only the tail
-    if (len >= LOG_WEB_BUF_SIZE) {
-        s += (len - (LOG_WEB_BUF_SIZE - 1));
-        len = LOG_WEB_BUF_SIZE - 1;
-    }
-
-    for (size_t i = 0; i < len; i++) {
-        log_web_buf[log_web_head] = s[i];
-        log_web_head = (log_web_head + 1) % LOG_WEB_BUF_SIZE;
-
-        if (log_web_head == 0) {
-            log_web_wrapped = true;
-        }
-    }
-}
-
-static int log_web_vprintf(const char *fmt, va_list ap)
-{
-    char tmp[LOG_WEB_TMP_LINE];
-
-    // Format once for the web buffer
-    va_list ap_copy;
-    va_copy(ap_copy, ap);
-    int n = vsnprintf(tmp, sizeof(tmp), fmt, ap_copy);
-    va_end(ap_copy);
-
-    if (n > 0 && log_web_mutex != NULL) {
-        size_t len = (n < (int)sizeof(tmp)) ? (size_t)n : (sizeof(tmp) - 1);
-
-        if (xSemaphoreTake(log_web_mutex, 0) == pdTRUE) {
-            log_web_append(tmp, len);
-            xSemaphoreGive(log_web_mutex);
-        }
-    }
-
-    // Still send logs to the normal output (monitor/UART)
-    if (log_old_vprintf) {
-        return log_old_vprintf(fmt, ap);
-    }
-
-    return n;
-}
-
-static void init_web_log_buffer(void)
-{
-    log_web_mutex = xSemaphoreCreateMutex();
-    assert(log_web_mutex != NULL);
-
-    log_old_vprintf = esp_log_set_vprintf(log_web_vprintf);
-}
 
 char *make_post_json(void)
 {
@@ -119,13 +51,12 @@ char *make_post_json(void)
 
     cJSON_AddItemToObject(root, "sample", sample);
 
-    cJSON_AddStringToObject(root, "log", log_web_buf);
-
     cJSON_AddStringToObject(node, "name", hostname);
     cJSON_AddStringToObject(node, "ip", ip_str);
     cJSON_AddStringToObject(node, "ssid", current_ssid);
     cJSON_AddStringToObject(node, "starttime", starttime_str);
     cJSON_AddStringToObject(node, "mac", macstr);
+    cJSON_AddNumberToObject(node, "boot_count", boot_count);
     cJSON_AddItemToObject(root, "node", node);
 
     char *json = cJSON_PrintUnformatted(root);
@@ -174,40 +105,36 @@ static float get_humidity()    { return 40 + (esp_random() % 200) / 10.0; }
 static float get_pressure()    { return 1000 + (esp_random() % 100); }
 #endif
 
-static void sampling_task(void *arg)
+static void sample_and_post(void)
 {
     esp_err_t err;
+    sample_t s;
 
-    while (1) {
-        sample_t s;
+    time_t now;
+    time(&now);
 
-        time_t now;
-        time(&now);
+    struct tm tinfo;
+    gmtime_r(&now, &tinfo);
 
-        struct tm tinfo;
-        gmtime_r(&now, &tinfo);
-
-        strftime(s.ts, sizeof(s.ts), "%Y-%m-%dT%H:%M:%SZ", &tinfo);
+    strftime(s.ts, sizeof(s.ts), "%Y-%m-%dT%H:%M:%SZ", &tinfo);
 
 #if SIMULATE_SENSOR
-        s.t = get_temperature();
-        s.h = get_humidity();
-        s.p = get_pressure();
-        err = ESP_OK;
+    s.t = get_temperature();
+    s.h = get_humidity();
+    s.p = get_pressure();
+    err = ESP_OK;
 #else
-        err = i2c_reader_read(&s.t, &s.h, &s.p);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Read failed: %s", esp_err_to_name(err));
-        }
+    err = i2c_reader_read(&s.t, &s.h, &s.p);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Read failed: %s", esp_err_to_name(err));
+    }
 #endif
 
-        if (err == ESP_OK) {
-            latest_sample = s;
-            send_to_server();
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(SAMPLING_INTERVAL)); 
+    if (err == ESP_OK) {
+        latest_sample = s;
+        send_to_server();
     }
+
 }
 
 /* ---------------- TIME ---------------- */
@@ -231,32 +158,41 @@ static void obtain_time(void)
         localtime_r(&now, &timeinfo);
     }
 
-    // Set global time_str to the current time in human-readable format for logging purposes
-    strftime(starttime_str, sizeof(starttime_str), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    if (strcmp(starttime_str, "UNKNOWN") == 0) {
+        // Only set starttime_str on the first boot after flashing, not on every deep sleep wakeup
+        strftime(starttime_str, sizeof(starttime_str), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    }
+    
 }
 
 /* ---------------- MAIN ---------------- */
 
 void app_main(void)
 {
+    boot_count++;
+
     ESP_ERROR_CHECK(nvs_flash_init());  // Needed for WiFi credentials storage
-    init_web_log_buffer();  
 
     wifi_init_base();
     wifi_start_sta();
 
     obtain_time();
     ESP_LOGI(TAG, "System time obtained: %s", starttime_str);
+    ESP_LOGI(TAG, "%s ready (boot: %d)", hostname, boot_count);
 
 #if SIMULATE_SENSOR
+    sample_and_post();
 #else
+    sensor_power_on();
     esp_err_t err = i2c_reader_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Sensor init failed: %s", esp_err_to_name(err));
         return;
     }
+    sample_and_post();
+    sensor_power_off();
 #endif
-    xTaskCreate(sampling_task, "sampling", 4096, NULL, 5, NULL);
 
-    ESP_LOGI(TAG, "%s ready", hostname);
+    esp_sleep_enable_timer_wakeup(SLEEP_INTERVAL);
+    esp_deep_sleep_start();
 }

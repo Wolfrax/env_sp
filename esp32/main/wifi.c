@@ -67,8 +67,8 @@ static void wifi_credentials_init(void)
     if (wifi_credentials_load(ssid, sizeof(ssid), password, sizeof(password)) != ESP_OK) {
         ESP_LOGI(TAG, "No WiFi credentials found in NVS");
 
-        strcpy(ssid, "G10");
-        strcpy(password, "Rafmagn1");
+        strcpy(ssid, SSID_STR);
+        strcpy(password, WIFI_PW_STR);
         wifi_credentials_save(ssid, password);
     }
 }

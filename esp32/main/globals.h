@@ -12,6 +12,8 @@
 #define SERVER_PATH     "/esp_ps"
 #define SERVER_PORT     "5000"
 #define SERVER_URL      "http://" SERVER_HOST ":" SERVER_PORT SERVER_PATH
+#define SSID_STR        "SSID_HERE"
+#define WIFI_PW_STR     "PASSWORD_HERE"
 
 extern char ip_str[IP_STR_LEN];
 extern char hostname[HOSTNAME_LEN];

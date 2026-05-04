@@ -6,11 +6,13 @@
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "driver/gpio.h"
 #include "i2c_reader.h"
+#include "globals.h"
 
 #define I2C_PORT        I2C_NUM_0
-#define I2C_SDA_PIN     8
-#define I2C_SCL_PIN     9
+#define I2C_SDA_PIN     6 //8
+#define I2C_SCL_PIN     7 //9
 #define I2C_FREQ_HZ     100000
 
 #define BME280_ADDR_1   0x76
@@ -27,8 +29,6 @@
 
 #define REG_CALIB00     0x88
 #define REG_CALIB26     0xE1
-
-static const char *TAG = "bme280";
 
 static i2c_master_bus_handle_t bus_handle = NULL;
 static i2c_master_dev_handle_t dev_handle = NULL;
@@ -242,15 +242,37 @@ static esp_err_t bme280_read_values(float *temp_c, float *press_hpa, float *hum_
     return ESP_OK;
 }
 
+void sensor_power_on(void)
+{
+    gpio_set_direction(SENSOR_PWR, GPIO_MODE_OUTPUT);
+    gpio_set_level(SENSOR_PWR, 1);
+    vTaskDelay(pdMS_TO_TICKS(100));
+}
+
+void sensor_power_off(void)
+{
+    gpio_set_direction(GPIO_NUM_6, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_6, 0);
+
+    gpio_set_direction(GPIO_NUM_7, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_7, 0);
+
+    gpio_set_level(SENSOR_PWR, 0);
+}
+
 esp_err_t i2c_reader_init(void)
 {
+    // Ensure pins are released from any previous configuration
+    gpio_reset_pin(GPIO_NUM_6);
+    gpio_reset_pin(GPIO_NUM_7);
+
     i2c_master_bus_config_t bus_cfg = {
         .i2c_port = I2C_PORT,
         .sda_io_num = I2C_SDA_PIN,
         .scl_io_num = I2C_SCL_PIN,
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true,
+        .flags.enable_internal_pullup = false, //true,
     };
 
     esp_err_t err = i2c_new_master_bus(&bus_cfg, &bus_handle);
