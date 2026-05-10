@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="icon" href="favicon.png" type="image/png">
-  <title>{{TITLE}}</title>
+  <link rel="icon" href="https://www.viltstigen.se/favicon.png" type="image/png">
+  <title>ESP Data Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     :root {
@@ -88,6 +88,7 @@
       display: grid;
       gap: 16px;
       grid-template-columns: 1fr;
+      margin-bottom: 16px;
     }
 
     .card {
@@ -191,35 +192,8 @@
   <div class="container">
     <div class="topbar">
       <div class="title-group">
-        <h1>{{TITLE}}</h1>
+        <h1 id="mainTitle">ESP Data Dashboard</h1>
         <p>Live and historical readings</p>
-      </div>
-      <div class="nav-links">
-        <a href="./">Dashboard</a>
-        <a href="debug.html">Debug</a>
-      </div>
-    </div>
-
-    <div class="grid info">
-      <div class="card node-item">
-        <div class="label">Start Time</div>
-        <div class="value" id="starttime">-</div>
-      </div>
-      <div class="card node-item">
-        <div class="label">MAC Address</div>
-        <div class="value" id="macaddr">-</div>
-      </div>
-      <div class="card node-item">
-        <div class="label">IP Address</div>
-        <div class="value" id="ipaddr">-</div>
-      </div>
-      <div class="card node-item">
-        <div class="label">Hostname</div>
-        <div class="value" id="hostname">-</div>
-      </div>
-      <div class="card node-item">
-        <div class="label">WiFi SSID</div>
-        <div class="value" id="wifiStatus">-</div>
       </div>
     </div>
 
@@ -248,6 +222,9 @@
         <div class="subtle" style="margin-top:10px;">
           Samples loaded: <span id="sampleCount">0</span>
         </div>
+        <div class="subtle" style="margin-top:10px;">
+          Samples since last reset: <span id="accumulatedCount">0</span>
+        </div>
       </div>
     </div>
 
@@ -272,6 +249,30 @@
         <canvas id="pressChart"></canvas>
       </div>
     </div>
+
+    <div class="grid info">
+      <div class="card node-item">
+        <div class="label">Start Time</div>
+        <div class="value" id="starttime">-</div>
+      </div>
+      <div class="card node-item">
+        <div class="label">MAC Address</div>
+        <div class="value" id="macaddr">-</div>
+      </div>
+      <div class="card node-item">
+        <div class="label">IP Address</div>
+        <div class="value" id="ipaddr">-</div>
+      </div>
+      <div class="card node-item">
+        <div class="label">Hostname</div>
+        <div class="value" id="hostname">-</div>
+      </div>
+      <div class="card node-item">
+        <div class="label">WiFi SSID</div>
+        <div class="value" id="wifiStatus">-</div>
+      </div>
+    </div>
+
   </div>
 
 <script>
@@ -285,7 +286,6 @@
   let tempChart, humChart, pressChart;
   let sensorData = [];
   let eventSource = null;
-  let sseConnected = false;
 
   function formatTime(ts) {
     const d = new Date(ts);
@@ -328,9 +328,9 @@
     if (!res.ok) throw new Error(`fetchData failed: HTTP ${res.status}`);
 
     const json = await res.json();
-    if (!json.data) return [];
+    if (!json) return [];
 
-    return json.data
+    return json
       .map(normalizeSample)
       .filter(isValidSample)
       .sort((a, b) => new Date(a.ts) - new Date(b.ts));
@@ -342,13 +342,16 @@
       if (!res.ok) throw new Error(`fetchNodeInfo failed: HTTP ${res.status}`);
 
       const json = await res.json();
-      if (!json.node) return;
+      if (!json) return;
 
-      document.getElementById("starttime").textContent = json.node.starttime || "-";
-      document.getElementById("macaddr").textContent = json.node.mac || "-";
-      document.getElementById("ipaddr").textContent = json.node.ip || "-";
-      document.getElementById("hostname").textContent = json.node.name || "-";
-      document.getElementById("wifiStatus").textContent = json.node.ssid || "-";
+      document.getElementById("starttime").textContent = json.starttime || "-";
+      document.getElementById("macaddr").textContent = json.mac || "-";
+      document.getElementById("ipaddr").textContent = json.ip || "-";
+      document.getElementById("hostname").textContent = json.name || "-";
+      document.getElementById("wifiStatus").textContent = json.ssid || "-";
+      document.getElementById("accumulatedCount").textContent = String(json.boot_count) || "0";
+      document.title = json.location;
+      document.getElementById("mainTitle").textContent = json.location;
     } catch (err) {
       console.error("fetchNodeInfo failed:", err);
     }
@@ -483,64 +486,6 @@
     document.getElementById("liveStatus").textContent = text;
   }
 
-  function addLiveSample(sample) {
-    const normalized = normalizeSample(sample);
-
-    if (!isValidSample(normalized)) {
-      console.warn("Invalid live sample:", sample);
-      return;
-    }
-
-    const last = sensorData.length ? sensorData[sensorData.length - 1] : null;
-    if (isSameSample(last, normalized)) {
-      return;
-    }
-
-    sensorData.push(normalized);
-    sensorData.sort((a, b) => new Date(a.ts) - new Date(b.ts));
-
-    updateLatest(sensorData);
-    updateExtremes(sensorData);
-    refreshCharts();
-  }
-
-  function startSSE() {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-
-    sseConnected = false;
-    setLiveStatus("Connecting…");
-
-    eventSource = new EventSource("events");
-
-    eventSource.addEventListener("sample", (e) => {
-      try {
-        const sample = JSON.parse(e.data);
-        addLiveSample(sample);
-
-        if (!sseConnected) {
-          sseConnected = true;
-          setLiveStatus("Live");
-        }
-      } catch (err) {
-        console.error("Failed to parse SSE sample:", err, e.data);
-      }
-    });
-
-    eventSource.onopen = () => {
-      sseConnected = true;
-      setLiveStatus("Live");
-    };
-
-    eventSource.onerror = (e) => {
-      sseConnected = false;
-      console.error("SSE connection error", e);
-      setLiveStatus("Reconnecting…");
-    };
-  }
-
   async function initDashboard() {
     try {
       await fetchNodeInfo();
@@ -549,6 +494,7 @@
       if (sensorData.length) {
         updateLatest(sensorData);
         updateExtremes(sensorData);
+        setLiveStatus("Live");
         createCharts();
       } else {
         document.getElementById("extremes").textContent = "No data available.";
@@ -556,15 +502,36 @@
         createCharts();
       }
 
-      startSSE();
     } catch (err) {
       console.error("initDashboard failed:", err);
       setLiveStatus("Error");
     }
   }
 
+    async function refreshDashboard() {
+    try {
+      await fetchNodeInfo();
+      sensorData = await fetchData();
+
+      if (sensorData.length) {
+        updateLatest(sensorData);
+        updateExtremes(sensorData);
+        setLiveStatus("Live");
+        refreshCharts();
+      } else {
+        document.getElementById("extremes").textContent = "No data available.";
+        setLiveStatus("Waiting for data");
+        refreshCharts();
+      }
+
+    } catch (err) {
+      console.error("refreshDashboard failed:", err);
+      setLiveStatus("Error");
+    }
+  }
+
   initDashboard();
-  setInterval(fetchNodeInfo, 30000);
+  setInterval(refreshDashboard, 10 * 60 * 1000); // Refresh every 10 minutes
 </script>
 </body>
 </html>

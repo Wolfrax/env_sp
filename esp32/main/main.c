@@ -26,7 +26,7 @@
 #endif
 
 #define SIMULATE_SENSOR 0
-#define SLEEP_INTERVAL (60*1000*1000) // 5 minutes = 300 * 1000 * 1000 microseconds
+#define SLEEP_INTERVAL (10*60*1000*1000) // 10 minutes = 10 * 60 * 1000 * 1000 microseconds
 
 RTC_DATA_ATTR static char starttime_str[64] = "UNKNOWN";
 RTC_DATA_ATTR static int boot_count = 0;
@@ -57,6 +57,7 @@ char *make_post_json(void)
     cJSON_AddStringToObject(node, "starttime", starttime_str);
     cJSON_AddStringToObject(node, "mac", macstr);
     cJSON_AddNumberToObject(node, "boot_count", boot_count);
+    cJSON_AddStringToObject(node, "location", LOCATION_STR);
     cJSON_AddItemToObject(root, "node", node);
 
     char *json = cJSON_PrintUnformatted(root);
