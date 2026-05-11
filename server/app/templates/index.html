@@ -6,6 +6,7 @@
   <link rel="icon" href="https://www.viltstigen.se/favicon.png" type="image/png">
   <title>ESP Data Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     :root {
       --bg: #f4f7fb;
@@ -188,6 +189,7 @@
     }
   </style>
 </head>
+
 <body>
   <div class="container">
     <div class="topbar">
@@ -219,9 +221,11 @@
       <div class="card">
         <h3 style="margin-bottom:10px;">Status</h3>
         <div class="status-pill" id="liveStatus">Connecting…</div>
+
         <div class="subtle" style="margin-top:10px;">
           Samples loaded: <span id="sampleCount">0</span>
         </div>
+
         <div class="subtle" style="margin-top:10px;">
           Samples since last reset: <span id="accumulatedCount">0</span>
         </div>
@@ -255,27 +259,46 @@
         <div class="label">Start Time</div>
         <div class="value" id="starttime">-</div>
       </div>
+
       <div class="card node-item">
         <div class="label">MAC Address</div>
         <div class="value" id="macaddr">-</div>
       </div>
+
       <div class="card node-item">
         <div class="label">IP Address</div>
         <div class="value" id="ipaddr">-</div>
       </div>
+
       <div class="card node-item">
         <div class="label">Hostname</div>
         <div class="value" id="hostname">-</div>
       </div>
+
       <div class="card node-item">
         <div class="label">WiFi SSID</div>
         <div class="value" id="wifiStatus">-</div>
       </div>
     </div>
-
   </div>
 
 <script>
+  let tempChart, humChart, pressChart;
+  let sensorData = [];
+  let eventSource = null;
+
+  function getNodeIdFromUrl() {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+
+    if (parts[0] === "node" && parts[1]) {
+      return parts[1];
+    }
+
+    return null;
+  }
+
+  const nodeId = getNodeIdFromUrl();
+
   window.addEventListener("beforeunload", () => {
     if (eventSource) {
       eventSource.close();
@@ -283,13 +306,13 @@
     }
   });
 
-  let tempChart, humChart, pressChart;
-  let sensorData = [];
-  let eventSource = null;
-
   function formatTime(ts) {
     const d = new Date(ts);
-    if (isNaN(d.getTime())) return ts;
+
+    if (isNaN(d.getTime())) {
+      return ts;
+    }
+
     return d.getFullYear() + "-" +
       String(d.getMonth() + 1).padStart(2, "0") + "-" +
       String(d.getDate()).padStart(2, "0") + " " +
@@ -315,20 +338,22 @@
       !isNaN(sample.p);
   }
 
-  function isSameSample(a, b) {
-    return !!a && !!b &&
-      a.ts === b.ts &&
-      Number(a.t) === Number(b.t) &&
-      Number(a.h) === Number(b.h) &&
-      Number(a.p) === Number(b.p);
-  }
-
   async function fetchData() {
-    const res = await fetch("data");
-    if (!res.ok) throw new Error(`fetchData failed: HTTP ${res.status}`);
+    if (!nodeId) {
+      throw new Error("No node id in URL. Use /node/<node_id>");
+    }
+
+    const res = await fetch(`/nodes/${encodeURIComponent(nodeId)}/data`);
+
+    if (!res.ok) {
+      throw new Error(`fetchData failed: HTTP ${res.status}`);
+    }
 
     const json = await res.json();
-    if (!json) return [];
+
+    if (!json) {
+      return [];
+    }
 
     return json
       .map(normalizeSample)
@@ -338,34 +363,58 @@
 
   async function fetchNodeInfo() {
     try {
-      const res = await fetch("get_node");
-      if (!res.ok) throw new Error(`fetchNodeInfo failed: HTTP ${res.status}`);
+      if (!nodeId) {
+        throw new Error("No node id in URL. Use /node/<node_id>");
+      }
+
+      const res = await fetch(`/nodes/${encodeURIComponent(nodeId)}/info`);
+
+      if (!res.ok) {
+        throw new Error(`fetchNodeInfo failed: HTTP ${res.status}`);
+      }
 
       const json = await res.json();
-      if (!json) return;
+
+      if (!json) {
+        return;
+      }
 
       document.getElementById("starttime").textContent = json.starttime || "-";
       document.getElementById("macaddr").textContent = json.mac || "-";
       document.getElementById("ipaddr").textContent = json.ip || "-";
       document.getElementById("hostname").textContent = json.name || "-";
       document.getElementById("wifiStatus").textContent = json.ssid || "-";
-      document.getElementById("accumulatedCount").textContent = String(json.boot_count) || "0";
-      document.title = json.location;
-      document.getElementById("mainTitle").textContent = json.location;
+
+      document.getElementById("accumulatedCount").textContent =
+        String(json.boot_count ?? 0);
+
+      const title = json.location || json.name || "ESP Data Dashboard";
+
+      document.title = title;
+      document.getElementById("mainTitle").textContent = title;
+
     } catch (err) {
       console.error("fetchNodeInfo failed:", err);
+      throw err;
     }
   }
 
   function updateLatest(data) {
-    if (!data.length) return;
+    if (!data.length) {
+      return;
+    }
 
     const last = data[data.length - 1];
     const timeText = formatTime(last.ts);
 
-    document.getElementById("latestTemp").textContent = `${last.t.toFixed(1)} °C`;
-    document.getElementById("latestHum").textContent = `${last.h.toFixed(1)} %`;
-    document.getElementById("latestPress").textContent = `${last.p.toFixed(1)} hPa`;
+    document.getElementById("latestTemp").textContent =
+      `${last.t.toFixed(1)} °C`;
+
+    document.getElementById("latestHum").textContent =
+      `${last.h.toFixed(1)} %`;
+
+    document.getElementById("latestPress").textContent =
+      `${last.p.toFixed(1)} hPa`;
 
     document.getElementById("latestTimeTemp").textContent = timeText;
     document.getElementById("latestTimeHum").textContent = timeText;
@@ -375,7 +424,9 @@
   }
 
   function updateExtremes(data) {
-    if (!data.length) return;
+    if (!data.length) {
+      return;
+    }
 
     let minT = data[0], maxT = data[0];
     let minH = data[0], maxH = data[0];
@@ -384,8 +435,10 @@
     for (const d of data) {
       if (d.t < minT.t) minT = d;
       if (d.t > maxT.t) maxT = d;
+
       if (d.h < minH.h) minH = d;
       if (d.h > maxH.h) maxH = d;
+
       if (d.p < minP.p) minP = d;
       if (d.p > maxP.p) maxP = d;
     }
@@ -396,11 +449,13 @@
         Min: ${minT.t.toFixed(1)} °C at ${formatTime(minT.ts)}<br>
         Max: ${maxT.t.toFixed(1)} °C at ${formatTime(maxT.ts)}
       </div>
+
       <div class="extreme-row">
         <strong>Humidity</strong>
         Min: ${minH.h.toFixed(1)} % at ${formatTime(minH.ts)}<br>
         Max: ${maxH.h.toFixed(1)} % at ${formatTime(maxH.ts)}
       </div>
+
       <div class="extreme-row">
         <strong>Air Pressure</strong>
         Min: ${minP.p.toFixed(1)} hPa at ${formatTime(minP.ts)}<br>
@@ -412,33 +467,40 @@
   function buildChart(canvasId, label, data, yTitle) {
     return new Chart(document.getElementById(canvasId), {
       type: "line",
+
       data: {
         labels: sensorData.map(d => formatTime(d.ts)),
+
         datasets: [{
           label,
           data,
           pointRadius: 0
         }]
       },
+
       options: {
         responsive: true,
         maintainAspectRatio: false,
         animation: false,
+
         interaction: {
           mode: "index",
           intersect: false
         },
+
         plugins: {
           legend: {
             display: true
           }
         },
+
         scales: {
           x: {
             ticks: {
               maxTicksLimit: 10
             }
           },
+
           y: {
             title: {
               display: true,
@@ -455,9 +517,26 @@
     if (humChart) humChart.destroy();
     if (pressChart) pressChart.destroy();
 
-    tempChart = buildChart("tempChart", "Temperature", sensorData.map(d => d.t), "°C");
-    humChart = buildChart("humChart", "Humidity", sensorData.map(d => d.h), "%");
-    pressChart = buildChart("pressChart", "Air Pressure", sensorData.map(d => d.p), "hPa");
+    tempChart = buildChart(
+      "tempChart",
+      "Temperature",
+      sensorData.map(d => d.t),
+      "°C"
+    );
+
+    humChart = buildChart(
+      "humChart",
+      "Humidity",
+      sensorData.map(d => d.h),
+      "%"
+    );
+
+    pressChart = buildChart(
+      "pressChart",
+      "Air Pressure",
+      sensorData.map(d => d.p),
+      "hPa"
+    );
   }
 
   function refreshCharts() {
@@ -486,43 +565,78 @@
     document.getElementById("liveStatus").textContent = text;
   }
 
+  function clearDisplayedData() {
+    document.getElementById("latestTemp").textContent = "-";
+    document.getElementById("latestHum").textContent = "-";
+    document.getElementById("latestPress").textContent = "-";
+
+    document.getElementById("latestTimeTemp").textContent = "-";
+    document.getElementById("latestTimeHum").textContent = "-";
+    document.getElementById("latestTimePress").textContent = "-";
+
+    document.getElementById("sampleCount").textContent = "0";
+    document.getElementById("extremes").textContent = "No data available.";
+  }
+
   async function initDashboard() {
     try {
+      if (!nodeId) {
+        document.getElementById("mainTitle").textContent =
+          "No node selected";
+
+        document.title = "No node selected";
+
+        document.getElementById("extremes").textContent =
+          "No node selected. Open this dashboard as /node/<node_id>.";
+
+        setLiveStatus("No node");
+        createCharts();
+        return;
+      }
+
       await fetchNodeInfo();
+
       sensorData = await fetchData();
 
       if (sensorData.length) {
         updateLatest(sensorData);
         updateExtremes(sensorData);
         setLiveStatus("Live");
-        createCharts();
       } else {
-        document.getElementById("extremes").textContent = "No data available.";
+        clearDisplayedData();
         setLiveStatus("Waiting for data");
-        createCharts();
       }
+
+      createCharts();
 
     } catch (err) {
       console.error("initDashboard failed:", err);
       setLiveStatus("Error");
+      createCharts();
     }
   }
 
-    async function refreshDashboard() {
+  async function refreshDashboard() {
     try {
+      if (!nodeId) {
+        setLiveStatus("No node");
+        return;
+      }
+
       await fetchNodeInfo();
+
       sensorData = await fetchData();
 
       if (sensorData.length) {
         updateLatest(sensorData);
         updateExtremes(sensorData);
         setLiveStatus("Live");
-        refreshCharts();
       } else {
-        document.getElementById("extremes").textContent = "No data available.";
+        clearDisplayedData();
         setLiveStatus("Waiting for data");
-        refreshCharts();
       }
+
+      refreshCharts();
 
     } catch (err) {
       console.error("refreshDashboard failed:", err);
@@ -531,7 +645,8 @@
   }
 
   initDashboard();
-  setInterval(refreshDashboard, 10 * 60 * 1000); // Refresh every 10 minutes
+
+  setInterval(refreshDashboard, 10 * 60 * 1000);
 </script>
 </body>
 </html>
