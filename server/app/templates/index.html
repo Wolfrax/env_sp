@@ -170,6 +170,55 @@
       font-weight: bold;
     }
 
+    .log-card {
+      margin-bottom: 20px;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .log-count {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    .log-list {
+      display: grid;
+      gap: 8px;
+      max-height: 260px;
+      overflow-y: auto;
+      background: #0f172a;
+      color: #e5e7eb;
+      border-radius: 12px;
+      padding: 12px;
+      font-family: "Courier New", monospace;
+      font-size: 0.85rem;
+    }
+
+    .log-line {
+      padding: 7px 9px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      word-break: break-word;
+    }
+
+    .log-line.warn {
+      color: #fbbf24;
+    }
+
+    .log-line.error {
+      color: #fca5a5;
+    }
+
+    .log-empty {
+      color: #94a3b8;
+    }
+
     @media (max-width: 1100px) {
       .grid.top,
       .grid.info {
@@ -283,6 +332,16 @@
         <div class="label">WiFi SSID</div>
         <div class="value" id="wifiStatus">-</div>
       </div>
+
+      <div class="card log-card">
+        <div class="log-header">
+          <h3 style="margin:0;">Device Log</h3>
+          <span class="log-count" id="logCount">0 entries</span>
+        </div>
+        <div class="log-list" id="deviceLog">
+          <div class="log-empty">No log entries received.</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -292,6 +351,44 @@
   let eventSource = null;
   let refreshTimer = null;
   let sampleIntervalUs = 60 * 1000 * 1000; // default 60 sec
+
+  function updateDeviceLog(logs) {
+    const logEl = document.getElementById("deviceLog");
+    const countEl = document.getElementById("logCount");
+
+    if (!Array.isArray(logs) || logs.length === 0) {
+      logEl.innerHTML = `<div class="log-empty">No log entries received.</div>`;
+      countEl.textContent = "0 entries";
+      return;
+    }
+
+    countEl.textContent = `${logs.length} ${logs.length === 1 ? "entry" : "entries"}`;
+
+    logEl.innerHTML = logs.map(line => {
+      const text = String(line);
+      const lower = text.toLowerCase();
+
+      let cls = "log-line";
+      if (lower.includes("error") || lower.includes("failed")) {
+        cls += " error";
+      } else if (lower.includes("warn")) {
+        cls += " warn";
+      }
+
+      return `<div class="${cls}">${escapeHtml(text)}</div>`;
+    }).join("");
+
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
 
   function scheduleRefresh() {
     if (refreshTimer) {
@@ -397,6 +494,8 @@
       if (!json) {
         return;
       }
+
+      updateDeviceLog(json.logs || []);
 
       document.getElementById("starttime").textContent = json.starttime || "-";
       document.getElementById("macaddr").textContent = json.mac || "-";

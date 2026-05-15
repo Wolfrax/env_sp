@@ -32,6 +32,12 @@
 RTC_DATA_ATTR static char starttime_str[64] = "UNKNOWN";
 RTC_DATA_ATTR static int boot_count = 0;
 
+#define LOG_LINES      16
+#define LOG_LINE_LEN   128
+
+static char log_buffer[LOG_LINES][LOG_LINE_LEN];
+static int log_index = 0;
+
 typedef struct {
     char ts[32];
     float t, h, p;
@@ -39,16 +45,57 @@ typedef struct {
 
 static sample_t latest_sample = {0};
 
+static void utc_timestamp_now(char *buf, size_t len)
+{
+    time_t now;
+    time(&now);
+
+    struct tm tinfo;
+    gmtime_r(&now, &tinfo);
+
+    strftime(
+        buf,
+        len,
+        "%Y-%m-%dT%H:%M:%SZ",
+        &tinfo
+    );
+}
+
+static void add_log(const char *fmt, ...)
+{
+    char msg[96];
+    char ts[32];
+
+    utc_timestamp_now(ts, sizeof(ts));
+
+    va_list args;
+    va_start(args, fmt);
+
+    vsnprintf(msg, sizeof(msg), fmt, args);
+
+    va_end(args);
+
+    snprintf(
+        log_buffer[log_index],
+        LOG_LINE_LEN,
+        "%s %s",
+        ts,
+        msg
+    );
+
+    log_index = (log_index + 1) % LOG_LINES;
+}
+
 static void go_to_deep_sleep(void)
 {
-    ESP_LOGI(TAG, "Stopping WiFi before deep sleep");
+    add_log("Stopping WiFi before deep sleep");
 
     esp_wifi_disconnect();
     esp_wifi_stop();
 
     esp_sleep_enable_timer_wakeup(SLEEP_INTERVAL);
-
-    ESP_LOGI(TAG, "Entering deep sleep for %" PRIu64 " us", (uint64_t)SLEEP_INTERVAL);
+    add_log("Entering deep sleep for %" PRIu64 " us", (uint64_t)SLEEP_INTERVAL);
+    
     esp_deep_sleep_start();
 }
 
@@ -75,6 +122,21 @@ char *make_post_json(void)
     cJSON_AddNumberToObject(node, "sample_interval_us", SLEEP_INTERVAL);
     cJSON_AddItemToObject(root, "node", node);
 
+    cJSON *logs = cJSON_CreateArray();
+
+    for (int i = 0; i < LOG_LINES; i++) {
+        int idx = (log_index + i) % LOG_LINES;
+
+        if (strlen(log_buffer[idx]) > 0) {
+            cJSON_AddItemToArray(
+                logs,
+                cJSON_CreateString(log_buffer[idx])
+            );
+        }
+    }
+
+    cJSON_AddItemToObject(root, "logs", logs);
+
     char *json = cJSON_PrintUnformatted(root);
 
     cJSON_Delete(root);
@@ -96,7 +158,7 @@ static void send_to_server(void)
 
         esp_http_client_handle_t client = esp_http_client_init(&config);
         if (client == NULL) {
-            ESP_LOGE(TAG, "Failed to initialize HTTP client");
+            add_log("Failed to initialize HTTP client");
             return;
         }   
 
@@ -105,18 +167,18 @@ static void send_to_server(void)
         esp_err_t err = esp_http_client_perform(client);
 
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %" PRId64,
+            add_log("HTTP POST Status = %d, content_length = %" PRId64,
                     esp_http_client_get_status_code(client),
                     esp_http_client_get_content_length(client));
         } else {
-            ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
+            add_log("HTTP POST request failed: %s", esp_err_to_name(err));
         }
 
         esp_http_client_cleanup(client);
         free(post_data);
     }
     else {
-        ESP_LOGE(TAG, "Failed to create JSON payload");
+        add_log("Failed to create JSON payload");
     }
 }
 
@@ -147,7 +209,7 @@ static void sample_and_post(void)
 #else
     err = i2c_reader_read(&s.t, &s.h, &s.p);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Read failed: %s", esp_err_to_name(err));
+        add_log("Read failed: %s", esp_err_to_name(err));
     }
 #endif
 
@@ -203,9 +265,9 @@ void app_main(void)
         // Every 4th hour should be good enough for the timestamp to be reasonably accurate without drifting too much.
         obtain_time();  
     }
-
-    ESP_LOGI(TAG, "System time obtained: %s", starttime_str);
-    ESP_LOGI(TAG, "%s ready (boot: %d)", hostname, boot_count);
+  
+    add_log("System time obtained: %s", starttime_str); 
+    add_log("%s ready (boot: %d)", hostname, boot_count);
 
 #if SIMULATE_SENSOR
     sample_and_post();
@@ -214,7 +276,7 @@ void app_main(void)
 
     esp_err_t err = i2c_reader_init();
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Sensor init failed: %s", esp_err_to_name(err));
+        add_log("Sensor init failed: %s", esp_err_to_name(err));
         sensor_power_off();
         vTaskDelay(pdMS_TO_TICKS(500));
         go_to_deep_sleep();
