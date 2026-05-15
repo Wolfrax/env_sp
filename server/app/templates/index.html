@@ -305,7 +305,6 @@
   const refreshMs = Math.max(1000, sampleIntervalUs / 1000);
 
   refreshTimer = setInterval(refreshDashboard, refreshMs);
-}
 
   function getNodeIdFromUrl() {
     const parts = window.location.pathname.split("/").filter(Boolean);
@@ -675,7 +674,7 @@
   }
 
   start();
-  
+
 </script>
 </body>
 </html>
