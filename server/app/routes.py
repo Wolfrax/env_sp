@@ -39,10 +39,11 @@ class TimeWindowStore:
         self.window = timedelta(days=window_days)
         self.node = None
         self.data = deque()
+        self.logs = deque(maxlen=50)
         self.lock = threading.Lock()
         self._load()
 
-    def add(self, temp, humidity, pressure, timestamp=None, node=None):
+    def add(self, temp, humidity, pressure, timestamp=None, node=None, logs=None):
         timestamp = parse_timestamp(timestamp)
 
         entry = {
@@ -55,6 +56,11 @@ class TimeWindowStore:
         with self.lock:
             if node is not None:
                 self.node = node
+
+            if logs:
+                self.logs.clear()
+                for line in logs[-50:]:
+                    self.logs.append(str(line))
 
             self.data.append(entry)
             self._cleanup(timestamp)
@@ -89,6 +95,7 @@ class TimeWindowStore:
     def _serialize(self):
         return {
             "node": self.node,
+            "logs": list(self.logs),
             "data": [
                 {
                     "t": d["t"],
@@ -102,6 +109,7 @@ class TimeWindowStore:
 
     def _deserialize(self, obj):
         self.node = obj.get("node")
+        self.logs = deque(obj.get("logs", []), maxlen=50)
 
         return deque(
             {
@@ -214,12 +222,15 @@ def post_data():
             f"{sample.get('t')}, {sample.get('h')}, {sample.get('p')}"
         )
 
+        logs = data.get("logs", [])
+
         store.add(
             temp=sample["t"],
             humidity=sample["h"],
             pressure=sample["p"],
             timestamp=sample.get("ts"),
             node=node,
+            logs=logs,
         )
 
         return jsonify({
@@ -252,4 +263,6 @@ def get_node(node_id):
     if node is None:
         return jsonify({}), 404
 
-    return jsonify(node)
+    info = dict(node)
+    info["logs"] = list(store.logs)
+    return jsonify(info)
