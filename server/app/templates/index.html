@@ -223,6 +223,10 @@
         <div class="status-pill" id="liveStatus">Connecting…</div>
 
         <div class="subtle" style="margin-top:10px;">
+          Samples loaded: <span id="sampleInterval">0</span>
+        </div>
+
+        <div class="subtle" style="margin-top:10px;">
           Samples loaded: <span id="sampleCount">0</span>
         </div>
 
@@ -286,6 +290,7 @@
   let tempChart, humChart, pressChart;
   let sensorData = [];
   let eventSource = null;
+  let sampleInterval = null;
 
   function getNodeIdFromUrl() {
     const parts = window.location.pathname.split("/").filter(Boolean);
@@ -387,6 +392,12 @@
 
       document.getElementById("accumulatedCount").textContent =
         String(json.boot_count ?? 0);
+
+      document.getElementById("sampleInterval").textContent =
+        json.sample_interval_us
+          ? `${(json.sample_interval_us / 1000 / 1000).toFixed(1)} min`
+          : "Unknown";
+      sampleInterval = json.sample_interval_ms / 1000 || (1 * 60 * 1000);
 
       const title = json.location || json.name || "ESP Data Dashboard";
 

@@ -13,6 +13,7 @@
 #define I2C_PORT        I2C_NUM_0
 #define I2C_SDA_PIN     6 //8
 #define I2C_SCL_PIN     7 //9
+
 #define I2C_FREQ_HZ     100000
 
 #define BME280_ADDR_1   0x76

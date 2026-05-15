@@ -58,6 +58,7 @@ char *make_post_json(void)
     cJSON_AddStringToObject(node, "mac", macstr);
     cJSON_AddNumberToObject(node, "boot_count", boot_count);
     cJSON_AddStringToObject(node, "location", LOCATION_STR);
+    cJSON_AddNumberToObject(node, "sample_interval_us", SLEEP_INTERVAL);
     cJSON_AddItemToObject(root, "node", node);
 
     char *json = cJSON_PrintUnformatted(root);
