@@ -26,7 +26,7 @@
 #endif
 
 #define SIMULATE_SENSOR 0
-#define SLEEP_INTERVAL (10*60*1000*1000) // 10 minutes = 10 * 60 * 1000 * 1000 microseconds
+#define SLEEP_INTERVAL (1*60*1000*1000) // 10 minutes = 10 * 60 * 1000 * 1000 microseconds
 
 RTC_DATA_ATTR static char starttime_str[64] = "UNKNOWN";
 RTC_DATA_ATTR static int boot_count = 0;
