@@ -90,3 +90,5 @@ server/.venv/
 __pycache__/
 *.pyc
 .env
+
+server/data/
