@@ -223,7 +223,7 @@
         <div class="status-pill" id="liveStatus">Connecting…</div>
 
         <div class="subtle" style="margin-top:10px;">
-          Samples loaded: <span id="sampleInterval">0</span>
+          Sample interval: <span id="sampleInterval">0</span>
         </div>
 
         <div class="subtle" style="margin-top:10px;">
@@ -395,9 +395,9 @@
 
       document.getElementById("sampleInterval").textContent =
         json.sample_interval_us
-          ? `${(json.sample_interval_us / 1000 / 1000).toFixed(1)} min`
+          ? `${(json.sample_interval_us / 1000 / 1000).toFixed(1)} sec`
           : "Unknown";
-      sampleInterval = json.sample_interval_ms / 1000 || (1 * 60 * 1000);
+      sampleInterval = json.sample_interval_us || (1 * 60 * 1000 * 1000);  // Default to 1 minute if not provided
 
       const title = json.location || json.name || "ESP Data Dashboard";
 
@@ -657,7 +657,7 @@
 
   initDashboard();
 
-  setInterval(refreshDashboard, 1 * 60 * 1000);
+  setInterval(refreshDashboard, sampleInterval / 1000);  // Refresh data every sample interval (converted from microseconds to milliseconds)
 </script>
 </body>
 </html>
