@@ -290,7 +290,22 @@
   let tempChart, humChart, pressChart;
   let sensorData = [];
   let eventSource = null;
-  let sampleInterval = null;
+  let refreshTimer = null;
+  let sampleIntervalUs = 60 * 1000 * 1000; // default 60 sec
+
+  function scheduleRefresh() {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+    }
+    const refreshMs = Math.max(1000, sampleIntervalUs / 1000);
+
+    refreshTimer = setInterval(refreshDashboard, refreshMs);
+  }
+
+  const refreshMs = Math.max(1000, sampleIntervalUs / 1000);
+
+  refreshTimer = setInterval(refreshDashboard, refreshMs);
+}
 
   function getNodeIdFromUrl() {
     const parts = window.location.pathname.split("/").filter(Boolean);
@@ -393,11 +408,10 @@
       document.getElementById("accumulatedCount").textContent =
         String(json.boot_count ?? 0);
 
+      sampleIntervalUs = Number(json.sample_interval_us) || (60 * 1000 * 1000);
+
       document.getElementById("sampleInterval").textContent =
-        json.sample_interval_us
-          ? `${(json.sample_interval_us / 1000 / 1000).toFixed(1)} sec`
-          : "Unknown";
-      sampleInterval = json.sample_interval_us || (1 * 60 * 1000 * 1000);  // Default to 1 minute if not provided
+        `${(sampleIntervalUs / 1000 / 1000).toFixed(1)} sec`;
 
       const title = json.location || json.name || "ESP Data Dashboard";
 
@@ -655,9 +669,13 @@
     }
   }
 
-  initDashboard();
+  async function start() {
+    await initDashboard();
+    scheduleRefresh();
+  }
 
-  setInterval(refreshDashboard, sampleInterval / 1000);  // Refresh data every sample interval (converted from microseconds to milliseconds)
+  start();
+  
 </script>
 </body>
 </html>
