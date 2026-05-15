@@ -20,6 +20,7 @@
 #include "globals.h"
 #include "i2c_reader.h"
 #include "wifi.h"
+#include "esp_wifi.h"
 
 #if SIMULATE_SENSOR
 #include "esp_random.h"
@@ -37,6 +38,19 @@ typedef struct {
 } sample_t;
 
 static sample_t latest_sample = {0};
+
+static void go_to_deep_sleep(void)
+{
+    ESP_LOGI(TAG, "Stopping WiFi before deep sleep");
+
+    esp_wifi_disconnect();
+    esp_wifi_stop();
+
+    esp_sleep_enable_timer_wakeup(SLEEP_INTERVAL);
+
+    ESP_LOGI(TAG, "Entering deep sleep for %" PRIu64 " us", (uint64_t)SLEEP_INTERVAL);
+    esp_deep_sleep_start();
+}
 
 char *make_post_json(void)
 {
@@ -76,6 +90,8 @@ static void send_to_server(void)
         esp_http_client_config_t config = {
             .url = SERVER_URL,
             .method = HTTP_METHOD_POST,
+            .timeout_ms = 10000,
+            .keep_alive_enable = false,
         };
 
         esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -86,14 +102,17 @@ static void send_to_server(void)
 
         esp_http_client_set_header(client, "Content-Type", "application/json");
         esp_http_client_set_post_field(client, post_data, strlen(post_data));
-        esp_err_t err = esp_http_client_perform(client); 
+        esp_err_t err = esp_http_client_perform(client);
+
         if (err == ESP_OK) {
-            ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %"PRId64,
+            ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %" PRId64,
                     esp_http_client_get_status_code(client),
                     esp_http_client_get_content_length(client));
         } else {
             ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
         }
+
+        esp_http_client_cleanup(client);
         free(post_data);
     }
     else {
@@ -173,12 +192,18 @@ void app_main(void)
 {
     boot_count++;
 
-    ESP_ERROR_CHECK(nvs_flash_init());  // Needed for WiFi credentials storage
+    ESP_ERROR_CHECK(nvs_flash_init());
 
     wifi_init_base();
     wifi_start_sta();
 
-    obtain_time();
+    if ((boot_count % 60) == 1) {
+        // Only obtain time from NTP every 60 boots to save time and power, since we only need an approximate time for the timestamp.
+        // For 10 minute sampling interval, use: if ((boot_count % 24) == 1). 
+        // Every 4th hour should be good enough for the timestamp to be reasonably accurate without drifting too much.
+        obtain_time();  
+    }
+
     ESP_LOGI(TAG, "System time obtained: %s", starttime_str);
     ESP_LOGI(TAG, "%s ready (boot: %d)", hostname, boot_count);
 
@@ -186,15 +211,18 @@ void app_main(void)
     sample_and_post();
 #else
     sensor_power_on();
+
     esp_err_t err = i2c_reader_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Sensor init failed: %s", esp_err_to_name(err));
-        return;
+        sensor_power_off();
+        vTaskDelay(pdMS_TO_TICKS(500));
+        go_to_deep_sleep();
     }
+
     sample_and_post();
     sensor_power_off();
 #endif
-
-    esp_sleep_enable_timer_wakeup(SLEEP_INTERVAL);
-    esp_deep_sleep_start();
+    vTaskDelay(pdMS_TO_TICKS(500));
+    go_to_deep_sleep();
 }
