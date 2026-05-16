@@ -12,8 +12,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_err.h"
-
-/* ---------------- GLOBALS ---------------- */
+#include "freertos/event_groups.h"
 
 char ip_str[IP_STR_LEN] = "UNKNOWN";
 char hostname[HOSTNAME_LEN] = "UNKNOWN";
@@ -21,6 +20,11 @@ char current_ssid[SSID_LEN] = "UNKNOWN";
 char ssid[SSID_LEN] = {0};
 char password[PASSWORD_LEN] = {0};
 char macstr[MAC_STR_LEN] = {0};
+
+#define WIFI_CONNECTED_BIT BIT0
+
+static EventGroupHandle_t wifi_event_group;
+
 
 esp_err_t wifi_credentials_save(const char *ssid, const char *password)
 {
@@ -78,17 +82,35 @@ static void wifi_event_handler(void *arg,
                                int32_t event_id,
                                void *event_data)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        ESP_LOGW(TAG, "WiFi disconnected, retrying...");
-        esp_wifi_connect();
-    }
 
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
 
         snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&event->ip_info.ip));
         ESP_LOGI(TAG, "Got IP: %s", ip_str);
+
+        xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
     }
+
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+
+        ESP_LOGW(TAG, "WiFi disconnected, retrying...");
+        esp_wifi_connect();
+    }
+}
+
+esp_err_t wifi_wait_connected(uint32_t timeout_ms)
+{
+    EventBits_t bits = xEventGroupWaitBits(
+        wifi_event_group,
+        WIFI_CONNECTED_BIT,
+        pdFALSE,
+        pdFALSE,
+        pdMS_TO_TICKS(timeout_ms)
+    );
+
+    return (bits & WIFI_CONNECTED_BIT) ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
 void wifi_init_base(void)
@@ -102,6 +124,8 @@ void wifi_init_base(void)
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    wifi_event_group = xEventGroupCreate();
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(
         WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));

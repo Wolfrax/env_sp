@@ -23,4 +23,5 @@ extern char ssid[SSID_LEN];
 extern char password[PASSWORD_LEN];
 extern char macstr[MAC_STR_LEN];
 
+
 #endif

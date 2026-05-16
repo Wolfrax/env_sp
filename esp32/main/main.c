@@ -22,11 +22,13 @@
 #include "wifi.h"
 #include "esp_wifi.h"
 
+#define DEV_MODE 1
+#define SIMULATE_SENSOR 0
+
 #if SIMULATE_SENSOR
 #include "esp_random.h"
 #endif
 
-#define SIMULATE_SENSOR 0
 #define SLEEP_INTERVAL (1*60*1000*1000) // 10 minutes = 10 * 60 * 1000 * 1000 microseconds
 
 RTC_DATA_ATTR static char starttime_str[64] = "UNKNOWN";
@@ -61,7 +63,7 @@ static void utc_timestamp_now(char *buf, size_t len)
     );
 }
 
-static void add_log(const char *fmt, ...)
+void add_log(const char *fmt, ...)
 {
     char msg[96];
     char ts[32];
@@ -259,14 +261,20 @@ void app_main(void)
     wifi_init_base();
     wifi_start_sta();
 
+    esp_err_t wifi_err = wifi_wait_connected(10000);
+    if (wifi_err != ESP_OK) {
+        add_log("WiFi/IP timeout");
+        go_to_deep_sleep();
+    }
+
     if ((boot_count % 60) == 1) {
         // Only obtain time from NTP every 60 boots to save time and power, since we only need an approximate time for the timestamp.
         // For 10 minute sampling interval, use: if ((boot_count % 24) == 1). 
         // Every 4th hour should be good enough for the timestamp to be reasonably accurate without drifting too much.
-        obtain_time();  
+        obtain_time();
+        add_log("System time obtained: %s", starttime_str);
     }
   
-    add_log("System time obtained: %s", starttime_str); 
     add_log("%s ready (boot: %d)", hostname, boot_count);
 
 #if SIMULATE_SENSOR
@@ -286,5 +294,10 @@ void app_main(void)
     sensor_power_off();
 #endif
     vTaskDelay(pdMS_TO_TICKS(500));
+
+#if DEV_MODE
+    add_log("DEV_MODE: waiting 30s before sleep");
+    vTaskDelay(pdMS_TO_TICKS(30000));
+#endif
     go_to_deep_sleep();
 }

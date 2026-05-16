@@ -7,6 +7,7 @@ extern "C" {
 
 void wifi_init_base(void);
 void wifi_start_sta(void);
+esp_err_t wifi_wait_connected(uint32_t timeout_ms);
 
 
 #ifdef __cplusplus

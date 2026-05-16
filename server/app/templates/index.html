@@ -357,6 +357,35 @@
   let refreshTimer = null;
   let sampleIntervalUs = 60 * 1000 * 1000; // default 60 sec
 
+  function formatLogTimeUtcToLocal(line) {
+    const match = String(line).match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s*(.*)$/);
+
+    if (!match) {
+      return line;
+    }
+
+    const utcTime = match[1];
+    const message = match[2];
+
+    const d = new Date(utcTime);
+
+    if (isNaN(d.getTime())) {
+      return line;
+    }
+
+    const localTime = d.toLocaleString("sv-SE", {
+      timeZone: "Europe/Stockholm",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+
+    return `${localTime} ${message}`;
+  }
+
   function updateDeviceLog(logs) {
     const logEl = document.getElementById("deviceLog");
     const countEl = document.getElementById("logCount");
@@ -370,7 +399,7 @@
     countEl.textContent = `${logs.length} ${logs.length === 1 ? "entry" : "entries"}`;
 
     logEl.innerHTML = logs.map(line => {
-      const text = String(line);
+      const text = formatLogTimeUtcToLocal(line);
       const lower = text.toLowerCase();
 
       let cls = "log-line";
