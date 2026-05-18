@@ -22,14 +22,14 @@
 #include "wifi.h"
 #include "esp_wifi.h"
 
-#define DEV_MODE 1
+#define DEV_MODE 0 // If set to 1, the device will not go to deep sleep and will print logs to the console for debugging.
 #define SIMULATE_SENSOR 0
 
 #if SIMULATE_SENSOR
 #include "esp_random.h"
 #endif
 
-#define SLEEP_INTERVAL (1*60*1000*1000) // 10 minutes = 10 * 60 * 1000 * 1000 microseconds
+#define SLEEP_INTERVAL (10*60*1000*1000) // 10 minutes = 10 * 60 * 1000 * 1000 microseconds
 
 RTC_DATA_ATTR static char starttime_str[64] = "UNKNOWN";
 RTC_DATA_ATTR static int boot_count = 0;
@@ -37,8 +37,8 @@ RTC_DATA_ATTR static int boot_count = 0;
 #define LOG_LINES      16
 #define LOG_LINE_LEN   128
 
-static char log_buffer[LOG_LINES][LOG_LINE_LEN];
-static int log_index = 0;
+RTC_DATA_ATTR static char log_buffer[LOG_LINES][LOG_LINE_LEN];
+RTC_DATA_ATTR static int log_index = 0;
 
 typedef struct {
     char ts[32];
@@ -267,10 +267,9 @@ void app_main(void)
         go_to_deep_sleep();
     }
 
-    if ((boot_count % 60) == 1) {
-        // Only obtain time from NTP every 60 boots to save time and power, since we only need an approximate time for the timestamp.
-        // For 10 minute sampling interval, use: if ((boot_count % 24) == 1). 
-        // Every 4th hour should be good enough for the timestamp to be reasonably accurate without drifting too much.
+    if ((boot_count % 24) == 1) {
+        // Only obtain time from NTP every 24 boots to save time and power, since we only need an approximate time for the timestamp.
+        // For 1 minute sampling interval, use: if ((boot_count % 60) == 1). 
         obtain_time();
         add_log("System time obtained: %s", starttime_str);
     }
