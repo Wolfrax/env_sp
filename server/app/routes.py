@@ -199,7 +199,7 @@ def node_dashboard(node_id):
     return render_template("index.html")
 
 
-@bp.route("/esp_ps", methods=["POST"])
+@bp.route("/esp32_bme280", methods=["POST"])
 def post_data():
     data = request.get_json(silent=True)
 

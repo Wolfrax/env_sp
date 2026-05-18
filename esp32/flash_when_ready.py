@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
+
 import glob
 import subprocess
 import time
 import sys
 
 PORT_PATTERNS = ["/dev/ttyACM*", "/dev/ttyUSB*"]
-TARGET = "esp32c3"
+
 IDF_PYTHON = "/home/mm/.espressif/tools/python/v6.0/venv/bin/python"
 IDF_TOOL = "/home/mm/.espressif/v6.0/esp-idf/tools/idf.py"
+
 
 def find_port():
     for pattern in PORT_PATTERNS:
@@ -15,6 +17,7 @@ def find_port():
         if ports:
             return ports[0]
     return None
+
 
 print("Waiting for ESP32 serial port... Press BUT1 / reconnect USB.")
 
@@ -39,4 +42,4 @@ while True:
 
         print("Flash failed, waiting for port again...")
 
-    time.sleep(0.1)
+    time.sleep(0.2)

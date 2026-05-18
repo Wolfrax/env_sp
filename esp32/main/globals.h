@@ -8,13 +8,13 @@
 #define SSID_LEN        33
 #define PASSWORD_LEN    65
 #define MAC_STR_LEN     18
-#define SERVER_HOST     "g10.tplinkdns.com"
-#define SERVER_PATH     "/esp_ps"
+#define SERVER_HOST     "rpi4.local"
+#define SERVER_PATH     "/esp32_bme280"
 #define SERVER_PORT     "8095"
 #define SERVER_URL      "http://" SERVER_HOST ":" SERVER_PORT SERVER_PATH
 #define SSID_STR        "SSID_HERE"
 #define WIFI_PW_STR     "PW_HERE"
-#define LOCATION_STR    "Test location"
+#define LOCATION_STR    "Viltstigen"
 
 extern char ip_str[IP_STR_LEN];
 extern char hostname[HOSTNAME_LEN];
