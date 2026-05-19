@@ -11,7 +11,7 @@
 #define SERVER_HOST     "www.viltstigen.se"
 #define SERVER_PATH     "/esp32_bme280"
 #define SERVER_PORT     "8095"
-#define SERVER_URL      "http://" SERVER_HOST SERVER_PATH
+#define SERVER_URL      "https://" SERVER_HOST SERVER_PATH
 #define SSID_STR        "SSID_HERE"  // Note that idf.py erase-flash needed when changing SSID or password
 #define WIFI_PW_STR     "PASSWORD_HERE"
 #define LOCATION_STR    "Viltstigen"
