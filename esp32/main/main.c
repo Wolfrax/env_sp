@@ -16,11 +16,11 @@
 #include "esp_sleep.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
-
 #include "globals.h"
 #include "i2c_reader.h"
 #include "wifi.h"
 #include "esp_wifi.h"
+#include "esp_crt_bundle.h"
 
 #define DEV_MODE 0 // If set to 1, the device will not go to deep sleep and will print logs to the console for debugging.
 #define SIMULATE_SENSOR 1
@@ -156,6 +156,7 @@ static void send_to_server(void)
             .method = HTTP_METHOD_POST,
             .timeout_ms = 10000,
             .keep_alive_enable = false,
+            .crt_bundle_attach = esp_crt_bundle_attach,
         };
 
         esp_http_client_handle_t client = esp_http_client_init(&config);

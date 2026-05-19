@@ -356,6 +356,16 @@
   let refreshTimer = null;
   let sampleIntervalUs = 60 * 1000 * 1000;
 
+  function scheduleRefresh() {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+    }
+
+    const refreshMs = Math.max(1000, sampleIntervalUs / 1000);
+
+    refreshTimer = setInterval(refreshDashboard, refreshMs);
+  }
+
   function getPathParts() {
     return window.location.pathname
       .split("/")
@@ -503,8 +513,10 @@
       Number(json.sample_interval_us) ||
       (60 * 1000 * 1000);
 
+    scheduleRefresh();
+
     document.getElementById("sampleInterval").textContent =
-      `${(sampleIntervalUs / 1000 / 1000).toFixed(1)} sec`;
+      `${(sampleIntervalUs / 1000 / 1000).toFixed(0)} sec`;
 
     const title =
       json.location ||
@@ -533,7 +545,7 @@
       `${logs.length} ${logs.length === 1 ? "entry" : "entries"}`;
 
     logEl.innerHTML = logs.map(line => {
-      const text = escapeHtml(line);
+      const text = escapeHtml(formatTime(line.ts)) + " - " + escapeHtml(line.msg);
 
       return `<div class="log-line">${text}</div>`;
     }).join("");
