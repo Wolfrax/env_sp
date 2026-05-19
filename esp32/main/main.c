@@ -23,7 +23,7 @@
 #include "esp_wifi.h"
 
 #define DEV_MODE 0 // If set to 1, the device will not go to deep sleep and will print logs to the console for debugging.
-#define SIMULATE_SENSOR 0
+#define SIMULATE_SENSOR 1
 
 #if SIMULATE_SENSOR
 #include "esp_random.h"
@@ -295,8 +295,9 @@ void app_main(void)
     vTaskDelay(pdMS_TO_TICKS(500));
 
 #if DEV_MODE
-    add_log("DEV_MODE: waiting 30s before sleep");
-    vTaskDelay(pdMS_TO_TICKS(30000));
-#endif
+    ESP_LOGI(TAG, "DEV_MODE: no sleep");
+#else
     go_to_deep_sleep();
+#endif
+
 }

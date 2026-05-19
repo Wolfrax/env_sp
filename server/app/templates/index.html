@@ -353,67 +353,50 @@
 <script>
   let tempChart, humChart, pressChart;
   let sensorData = [];
-  let eventSource = null;
   let refreshTimer = null;
-  let sampleIntervalUs = 60 * 1000 * 1000; // default 60 sec
+  let sampleIntervalUs = 60 * 1000 * 1000;
 
-  function formatLogTimeUtcToLocal(line) {
-    const match = String(line).match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s*(.*)$/);
-
-    if (!match) {
-      return line;
-    }
-
-    const utcTime = match[1];
-    const message = match[2];
-
-    const d = new Date(utcTime);
-
-    if (isNaN(d.getTime())) {
-      return line;
-    }
-
-    const localTime = d.toLocaleString("sv-SE", {
-      timeZone: "Europe/Stockholm",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    });
-
-    return `${localTime} ${message}`;
+  function getPathParts() {
+    return window.location.pathname
+      .split("/")
+      .filter(Boolean);
   }
 
-  function updateDeviceLog(logs) {
-    const logEl = document.getElementById("deviceLog");
-    const countEl = document.getElementById("logCount");
+  function getApiPrefix() {
+    const parts = getPathParts();
 
-    if (!Array.isArray(logs) || logs.length === 0) {
-      logEl.innerHTML = `<div class="log-empty">No log entries received.</div>`;
-      countEl.textContent = "0 entries";
-      return;
+    if (parts[0] === "esp32_bme280") {
+      return "/esp32_bme280";
     }
 
-    countEl.textContent = `${logs.length} ${logs.length === 1 ? "entry" : "entries"}`;
-
-    logEl.innerHTML = logs.map(line => {
-      const text = formatLogTimeUtcToLocal(line);
-      const lower = text.toLowerCase();
-
-      let cls = "log-line";
-      if (lower.includes("error") || lower.includes("failed")) {
-        cls += " error";
-      } else if (lower.includes("warn")) {
-        cls += " warn";
-      }
-
-      return `<div class="${cls}">${escapeHtml(text)}</div>`;
-    }).join("");
-
-    logEl.scrollTop = logEl.scrollHeight;
+    return "";
   }
+
+  function getNodeIdFromUrl() {
+    const parts = getPathParts();
+
+    // https://www.viltstigen.se/esp32_bme280/node/<node_id>
+    if (
+      parts[0] === "esp32_bme280" &&
+      parts[1] === "node" &&
+      parts[2]
+    ) {
+      return parts[2];
+    }
+
+    // http://rpi4.local:8095/node/<node_id>
+    if (
+      parts[0] === "node" &&
+      parts[1]
+    ) {
+      return parts[1];
+    }
+
+    return null;
+  }
+
+  const apiPrefix = getApiPrefix();
+  const nodeId = getNodeIdFromUrl();
 
   function escapeHtml(value) {
     return String(value)
@@ -423,34 +406,6 @@
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
   }
-
-  function scheduleRefresh() {
-    if (refreshTimer) {
-      clearInterval(refreshTimer);
-    }
-    const refreshMs = Math.max(1000, sampleIntervalUs / 1000);
-
-    refreshTimer = setInterval(refreshDashboard, refreshMs);
-  }
-
-  function getNodeIdFromUrl() {
-    const parts = window.location.pathname.split("/").filter(Boolean);
-
-    if (parts[0] === "node" && parts[1]) {
-      return parts[1];
-    }
-
-    return null;
-  }
-
-  const nodeId = getNodeIdFromUrl();
-
-  window.addEventListener("beforeunload", () => {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-  });
 
   function formatTime(ts) {
     const d = new Date(ts);
@@ -486,10 +441,15 @@
 
   async function fetchData() {
     if (!nodeId) {
-      throw new Error("No node id in URL. Use /node/<node_id>");
+      throw new Error("No node id in URL.");
     }
 
-    const res = await fetch(`/nodes/${encodeURIComponent(nodeId)}/data`);
+    const url =
+      `${apiPrefix}/nodes/${encodeURIComponent(nodeId)}/data`;
+
+    console.log("fetchData:", url);
+
+    const res = await fetch(url);
 
     if (!res.ok) {
       throw new Error(`fetchData failed: HTTP ${res.status}`);
@@ -497,59 +457,88 @@
 
     const json = await res.json();
 
-    if (!json) {
-      return [];
-    }
-
-    return json
+    return (json || [])
       .map(normalizeSample)
       .filter(isValidSample)
       .sort((a, b) => new Date(a.ts) - new Date(b.ts));
   }
 
   async function fetchNodeInfo() {
-    try {
-      if (!nodeId) {
-        throw new Error("No node id in URL. Use /node/<node_id>");
-      }
-
-      const res = await fetch(`/nodes/${encodeURIComponent(nodeId)}/info`);
-
-      if (!res.ok) {
-        throw new Error(`fetchNodeInfo failed: HTTP ${res.status}`);
-      }
-
-      const json = await res.json();
-
-      if (!json) {
-        return;
-      }
-
-      updateDeviceLog(json.logs || []);
-
-      document.getElementById("starttime").textContent = json.starttime || "-";
-      document.getElementById("macaddr").textContent = json.mac || "-";
-      document.getElementById("ipaddr").textContent = json.ip || "-";
-      document.getElementById("hostname").textContent = json.name || "-";
-      document.getElementById("wifiStatus").textContent = json.ssid || "-";
-
-      document.getElementById("accumulatedCount").textContent =
-        String(json.boot_count ?? 0);
-
-      sampleIntervalUs = Number(json.sample_interval_us) || (60 * 1000 * 1000);
-
-      document.getElementById("sampleInterval").textContent =
-        `${(sampleIntervalUs / 1000 / 1000).toFixed(1)} sec`;
-
-      const title = json.location || json.name || "ESP Data Dashboard";
-
-      document.title = title;
-      document.getElementById("mainTitle").textContent = title;
-
-    } catch (err) {
-      console.error("fetchNodeInfo failed:", err);
-      throw err;
+    if (!nodeId) {
+      throw new Error("No node id in URL.");
     }
+
+    const url =
+      `${apiPrefix}/nodes/${encodeURIComponent(nodeId)}/info`;
+
+    console.log("fetchNodeInfo:", url);
+
+    const res = await fetch(url);
+
+    if (!res.ok) {
+      throw new Error(`fetchNodeInfo failed: HTTP ${res.status}`);
+    }
+
+    const json = await res.json();
+
+    document.getElementById("starttime").textContent =
+      json.starttime || "-";
+
+    document.getElementById("macaddr").textContent =
+      json.mac || "-";
+
+    document.getElementById("ipaddr").textContent =
+      json.ip || "-";
+
+    document.getElementById("hostname").textContent =
+      json.name || "-";
+
+    document.getElementById("wifiStatus").textContent =
+      json.ssid || "-";
+
+    document.getElementById("accumulatedCount").textContent =
+      String(json.boot_count ?? 0);
+
+    sampleIntervalUs =
+      Number(json.sample_interval_us) ||
+      (60 * 1000 * 1000);
+
+    document.getElementById("sampleInterval").textContent =
+      `${(sampleIntervalUs / 1000 / 1000).toFixed(1)} sec`;
+
+    const title =
+      json.location ||
+      json.name ||
+      "ESP Data Dashboard";
+
+    document.title = title;
+    document.getElementById("mainTitle").textContent = title;
+
+    updateDeviceLog(json.logs || []);
+  }
+
+  function updateDeviceLog(logs) {
+    const logEl = document.getElementById("deviceLog");
+    const countEl = document.getElementById("logCount");
+
+    if (!Array.isArray(logs) || logs.length === 0) {
+      logEl.innerHTML =
+        `<div class="log-empty">No log entries received.</div>`;
+
+      countEl.textContent = "0 entries";
+      return;
+    }
+
+    countEl.textContent =
+      `${logs.length} ${logs.length === 1 ? "entry" : "entries"}`;
+
+    logEl.innerHTML = logs.map(line => {
+      const text = escapeHtml(line);
+
+      return `<div class="log-line">${text}</div>`;
+    }).join("");
+
+    logEl.scrollTop = logEl.scrollHeight;
   }
 
   function updateLatest(data) {
@@ -569,11 +558,17 @@
     document.getElementById("latestPress").textContent =
       `${last.p.toFixed(1)} hPa`;
 
-    document.getElementById("latestTimeTemp").textContent = timeText;
-    document.getElementById("latestTimeHum").textContent = timeText;
-    document.getElementById("latestTimePress").textContent = timeText;
+    document.getElementById("latestTimeTemp").textContent =
+      timeText;
 
-    document.getElementById("sampleCount").textContent = data.length;
+    document.getElementById("latestTimeHum").textContent =
+      timeText;
+
+    document.getElementById("latestTimePress").textContent =
+      timeText;
+
+    document.getElementById("sampleCount").textContent =
+      data.length;
   }
 
   function updateExtremes(data) {
@@ -634,33 +629,7 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: false,
-
-        interaction: {
-          mode: "index",
-          intersect: false
-        },
-
-        plugins: {
-          legend: {
-            display: true
-          }
-        },
-
-        scales: {
-          x: {
-            ticks: {
-              maxTicksLimit: 10
-            }
-          },
-
-          y: {
-            title: {
-              display: true,
-              text: yTitle
-            }
-          }
-        }
+        animation: false
       }
     });
   }
@@ -692,114 +661,24 @@
     );
   }
 
-  function refreshCharts() {
-    const labels = sensorData.map(d => formatTime(d.ts));
-
-    if (tempChart) {
-      tempChart.data.labels = labels;
-      tempChart.data.datasets[0].data = sensorData.map(d => d.t);
-      tempChart.update();
-    }
-
-    if (humChart) {
-      humChart.data.labels = labels;
-      humChart.data.datasets[0].data = sensorData.map(d => d.h);
-      humChart.update();
-    }
-
-    if (pressChart) {
-      pressChart.data.labels = labels;
-      pressChart.data.datasets[0].data = sensorData.map(d => d.p);
-      pressChart.update();
-    }
-  }
-
-  function setLiveStatus(text) {
-    document.getElementById("liveStatus").textContent = text;
-  }
-
-  function clearDisplayedData() {
-    document.getElementById("latestTemp").textContent = "-";
-    document.getElementById("latestHum").textContent = "-";
-    document.getElementById("latestPress").textContent = "-";
-
-    document.getElementById("latestTimeTemp").textContent = "-";
-    document.getElementById("latestTimeHum").textContent = "-";
-    document.getElementById("latestTimePress").textContent = "-";
-
-    document.getElementById("sampleCount").textContent = "0";
-    document.getElementById("extremes").textContent = "No data available.";
-  }
-
-  async function initDashboard() {
-    try {
-      if (!nodeId) {
-        document.getElementById("mainTitle").textContent =
-          "No node selected";
-
-        document.title = "No node selected";
-
-        document.getElementById("extremes").textContent =
-          "No node selected. Open this dashboard as /node/<node_id>.";
-
-        setLiveStatus("No node");
-        createCharts();
-        return;
-      }
-
-      await fetchNodeInfo();
-
-      sensorData = await fetchData();
-
-      if (sensorData.length) {
-        updateLatest(sensorData);
-        updateExtremes(sensorData);
-        setLiveStatus("Live");
-      } else {
-        clearDisplayedData();
-        setLiveStatus("Waiting for data");
-      }
-
-      createCharts();
-
-    } catch (err) {
-      console.error("initDashboard failed:", err);
-      setLiveStatus("Error");
-      createCharts();
-    }
-  }
-
-  async function refreshDashboard() {
-    try {
-      if (!nodeId) {
-        setLiveStatus("No node");
-        return;
-      }
-
-      await fetchNodeInfo();
-
-      sensorData = await fetchData();
-
-      if (sensorData.length) {
-        updateLatest(sensorData);
-        updateExtremes(sensorData);
-        setLiveStatus("Live");
-      } else {
-        clearDisplayedData();
-        setLiveStatus("Waiting for data");
-      }
-
-      refreshCharts();
-
-    } catch (err) {
-      console.error("refreshDashboard failed:", err);
-      setLiveStatus("Error");
-    }
-  }
-
   async function start() {
-    await initDashboard();
-    scheduleRefresh();
+    try {
+      await fetchNodeInfo();
+
+      sensorData = await fetchData();
+
+      updateLatest(sensorData);
+      updateExtremes(sensorData);
+
+      createCharts();
+
+      document.getElementById("liveStatus").textContent = "Live";
+
+    } catch (err) {
+      console.error(err);
+
+      document.getElementById("liveStatus").textContent = "Error";
+    }
   }
 
   start();

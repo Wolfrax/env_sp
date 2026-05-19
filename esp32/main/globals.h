@@ -8,12 +8,12 @@
 #define SSID_LEN        33
 #define PASSWORD_LEN    65
 #define MAC_STR_LEN     18
-#define SERVER_HOST     "rpi4.local"
+#define SERVER_HOST     "www.viltstigen.se"
 #define SERVER_PATH     "/esp32_bme280"
 #define SERVER_PORT     "8095"
-#define SERVER_URL      "http://" SERVER_HOST ":" SERVER_PORT SERVER_PATH
-#define SSID_STR        "SSID_HERE"
-#define WIFI_PW_STR     "PW_HERE"
+#define SERVER_URL      "http://" SERVER_HOST SERVER_PATH
+#define SSID_STR        "SSID_HERE"  // Note that idf.py erase-flash needed when changing SSID or password
+#define WIFI_PW_STR     "PASSWORD_HERE"
 #define LOCATION_STR    "Viltstigen"
 
 extern char ip_str[IP_STR_LEN];
