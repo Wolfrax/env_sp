@@ -356,49 +356,23 @@
   let refreshTimer = null;
   let sampleIntervalUs = 60 * 1000 * 1000;
 
-  function scheduleRefresh() {
-    if (refreshTimer) {
-      clearInterval(refreshTimer);
-    }
-
-    const refreshMs = Math.max(1000, sampleIntervalUs / 1000);
-
-    refreshTimer = setInterval(refreshDashboard, refreshMs);
-  }
-
   function getPathParts() {
-    return window.location.pathname
-      .split("/")
-      .filter(Boolean);
+    return window.location.pathname.split("/").filter(Boolean);
   }
 
   function getApiPrefix() {
     const parts = getPathParts();
-
-    if (parts[0] === "esp32_bme280") {
-      return "/esp32_bme280";
-    }
-
-    return "";
+    return parts[0] === "esp32_bme280" ? "/esp32_bme280" : "";
   }
 
   function getNodeIdFromUrl() {
     const parts = getPathParts();
 
-    // https://www.viltstigen.se/esp32_bme280/node/<node_id>
-    if (
-      parts[0] === "esp32_bme280" &&
-      parts[1] === "node" &&
-      parts[2]
-    ) {
+    if (parts[0] === "esp32_bme280" && parts[1] === "node" && parts[2]) {
       return parts[2];
     }
 
-    // http://rpi4.local:8095/node/<node_id>
-    if (
-      parts[0] === "node" &&
-      parts[1]
-    ) {
+    if (parts[0] === "node" && parts[1]) {
       return parts[1];
     }
 
@@ -419,10 +393,7 @@
 
   function formatTime(ts) {
     const d = new Date(ts);
-
-    if (isNaN(d.getTime())) {
-      return ts;
-    }
+    if (isNaN(d.getTime())) return ts;
 
     return d.getFullYear() + "-" +
       String(d.getMonth() + 1).padStart(2, "0") + "-" +
@@ -430,6 +401,26 @@
       String(d.getHours()).padStart(2, "0") + ":" +
       String(d.getMinutes()).padStart(2, "0") + ":" +
       String(d.getSeconds()).padStart(2, "0");
+  }
+
+  function formatLogTimeUtcToLocal(line) {
+    const match = String(line).match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s*(.*)$/);
+    if (!match) return line;
+
+    const d = new Date(match[1]);
+    if (isNaN(d.getTime())) return line;
+
+    const localTime = d.toLocaleString("sv-SE", {
+      timeZone: "Europe/Stockholm",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    });
+
+    return `${localTime} ${match[2]}`;
   }
 
   function normalizeSample(sample) {
@@ -454,12 +445,7 @@
       throw new Error("No node id in URL.");
     }
 
-    const url =
-      `${apiPrefix}/nodes/${encodeURIComponent(nodeId)}/data`;
-
-    console.log("fetchData:", url);
-
-    const res = await fetch(url);
+    const res = await fetch(`${apiPrefix}/nodes/${encodeURIComponent(nodeId)}/data`);
 
     if (!res.ok) {
       throw new Error(`fetchData failed: HTTP ${res.status}`);
@@ -478,33 +464,22 @@
       throw new Error("No node id in URL.");
     }
 
-    const url =
-      `${apiPrefix}/nodes/${encodeURIComponent(nodeId)}/info`;
-
-    console.log("fetchNodeInfo:", url);
-
-    const res = await fetch(url);
+    const res = await fetch(`${apiPrefix}/nodes/${encodeURIComponent(nodeId)}/info`);
 
     if (!res.ok) {
       throw new Error(`fetchNodeInfo failed: HTTP ${res.status}`);
     }
 
     const json = await res.json();
+    if (!json) return;
 
-    document.getElementById("starttime").textContent =
-      json.starttime || "-";
+    updateDeviceLog(json.logs || []);
 
-    document.getElementById("macaddr").textContent =
-      json.mac || "-";
-
-    document.getElementById("ipaddr").textContent =
-      json.ip || "-";
-
-    document.getElementById("hostname").textContent =
-      json.name || "-";
-
-    document.getElementById("wifiStatus").textContent =
-      json.ssid || "-";
+    document.getElementById("starttime").textContent = json.starttime || "-";
+    document.getElementById("macaddr").textContent = json.mac || "-";
+    document.getElementById("ipaddr").textContent = json.ip || "-";
+    document.getElementById("hostname").textContent = json.name || "-";
+    document.getElementById("wifiStatus").textContent = json.ssid || "-";
 
     document.getElementById("accumulatedCount").textContent =
       String(json.boot_count ?? 0);
@@ -513,20 +488,12 @@
       Number(json.sample_interval_us) ||
       (60 * 1000 * 1000);
 
-    scheduleRefresh();
-
     document.getElementById("sampleInterval").textContent =
       `${(sampleIntervalUs / 1000 / 1000).toFixed(0)} sec`;
 
-    const title =
-      json.location ||
-      json.name ||
-      "ESP Data Dashboard";
-
+    const title = json.location || json.name || "ESP Data Dashboard";
     document.title = title;
     document.getElementById("mainTitle").textContent = title;
-
-    updateDeviceLog(json.logs || []);
   }
 
   function updateDeviceLog(logs) {
@@ -534,9 +501,7 @@
     const countEl = document.getElementById("logCount");
 
     if (!Array.isArray(logs) || logs.length === 0) {
-      logEl.innerHTML =
-        `<div class="log-empty">No log entries received.</div>`;
-
+      logEl.innerHTML = `<div class="log-empty">No log entries received.</div>`;
       countEl.textContent = "0 entries";
       return;
     }
@@ -545,48 +510,41 @@
       `${logs.length} ${logs.length === 1 ? "entry" : "entries"}`;
 
     logEl.innerHTML = logs.map(line => {
-      const text = escapeHtml(formatTime(line.ts)) + " - " + escapeHtml(line.msg);
+      const text = escapeHtml(formatLogTimeUtcToLocal(line));
+      const lower = text.toLowerCase();
 
-      return `<div class="log-line">${text}</div>`;
+      let cls = "log-line";
+      if (lower.includes("error") || lower.includes("failed")) {
+        cls += " error";
+      } else if (lower.includes("warn")) {
+        cls += " warn";
+      }
+
+      return `<div class="${cls}">${text}</div>`;
     }).join("");
 
     logEl.scrollTop = logEl.scrollHeight;
   }
 
   function updateLatest(data) {
-    if (!data.length) {
-      return;
-    }
+    if (!data.length) return;
 
     const last = data[data.length - 1];
     const timeText = formatTime(last.ts);
 
-    document.getElementById("latestTemp").textContent =
-      `${last.t.toFixed(1)} °C`;
+    document.getElementById("latestTemp").textContent = `${last.t.toFixed(1)} °C`;
+    document.getElementById("latestHum").textContent = `${last.h.toFixed(1)} %`;
+    document.getElementById("latestPress").textContent = `${last.p.toFixed(1)} hPa`;
 
-    document.getElementById("latestHum").textContent =
-      `${last.h.toFixed(1)} %`;
+    document.getElementById("latestTimeTemp").textContent = timeText;
+    document.getElementById("latestTimeHum").textContent = timeText;
+    document.getElementById("latestTimePress").textContent = timeText;
 
-    document.getElementById("latestPress").textContent =
-      `${last.p.toFixed(1)} hPa`;
-
-    document.getElementById("latestTimeTemp").textContent =
-      timeText;
-
-    document.getElementById("latestTimeHum").textContent =
-      timeText;
-
-    document.getElementById("latestTimePress").textContent =
-      timeText;
-
-    document.getElementById("sampleCount").textContent =
-      data.length;
+    document.getElementById("sampleCount").textContent = data.length;
   }
 
   function updateExtremes(data) {
-    if (!data.length) {
-      return;
-    }
+    if (!data.length) return;
 
     let minT = data[0], maxT = data[0];
     let minH = data[0], maxH = data[0];
@@ -595,10 +553,8 @@
     for (const d of data) {
       if (d.t < minT.t) minT = d;
       if (d.t > maxT.t) maxT = d;
-
       if (d.h < minH.h) minH = d;
       if (d.h > maxH.h) maxH = d;
-
       if (d.p < minP.p) minP = d;
       if (d.p > maxP.p) maxP = d;
     }
@@ -609,13 +565,11 @@
         Min: ${minT.t.toFixed(1)} °C at ${formatTime(minT.ts)}<br>
         Max: ${maxT.t.toFixed(1)} °C at ${formatTime(maxT.ts)}
       </div>
-
       <div class="extreme-row">
         <strong>Humidity</strong>
         Min: ${minH.h.toFixed(1)} % at ${formatTime(minH.ts)}<br>
         Max: ${maxH.h.toFixed(1)} % at ${formatTime(maxH.ts)}
       </div>
-
       <div class="extreme-row">
         <strong>Air Pressure</strong>
         Min: ${minP.p.toFixed(1)} hPa at ${formatTime(minP.ts)}<br>
@@ -624,24 +578,58 @@
     `;
   }
 
+  function clearDisplayedData() {
+    document.getElementById("latestTemp").textContent = "-";
+    document.getElementById("latestHum").textContent = "-";
+    document.getElementById("latestPress").textContent = "-";
+    document.getElementById("latestTimeTemp").textContent = "-";
+    document.getElementById("latestTimeHum").textContent = "-";
+    document.getElementById("latestTimePress").textContent = "-";
+    document.getElementById("sampleCount").textContent = "0";
+    document.getElementById("extremes").textContent = "No data available.";
+  }
+
+  function setLiveStatus(text) {
+    document.getElementById("liveStatus").textContent = text;
+  }
+
   function buildChart(canvasId, label, data, yTitle) {
     return new Chart(document.getElementById(canvasId), {
       type: "line",
-
       data: {
         labels: sensorData.map(d => formatTime(d.ts)),
-
         datasets: [{
           label,
           data,
           pointRadius: 0
         }]
       },
-
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: false
+        animation: false,
+        interaction: {
+          mode: "index",
+          intersect: false
+        },
+        plugins: {
+          legend: {
+            display: true
+          }
+        },
+        scales: {
+          x: {
+            ticks: {
+              maxTicksLimit: 10
+            }
+          },
+          y: {
+            title: {
+              display: true,
+              text: yTitle
+            }
+          }
+        }
       }
     });
   }
@@ -651,50 +639,110 @@
     if (humChart) humChart.destroy();
     if (pressChart) pressChart.destroy();
 
-    tempChart = buildChart(
-      "tempChart",
-      "Temperature",
-      sensorData.map(d => d.t),
-      "°C"
-    );
-
-    humChart = buildChart(
-      "humChart",
-      "Humidity",
-      sensorData.map(d => d.h),
-      "%"
-    );
-
-    pressChart = buildChart(
-      "pressChart",
-      "Air Pressure",
-      sensorData.map(d => d.p),
-      "hPa"
-    );
+    tempChart = buildChart("tempChart", "Temperature", sensorData.map(d => d.t), "°C");
+    humChart = buildChart("humChart", "Humidity", sensorData.map(d => d.h), "%");
+    pressChart = buildChart("pressChart", "Air Pressure", sensorData.map(d => d.p), "hPa");
   }
 
-  async function start() {
-    try {
-      await fetchNodeInfo();
+  function refreshCharts() {
+    const labels = sensorData.map(d => formatTime(d.ts));
 
-      sensorData = await fetchData();
+    if (tempChart) {
+      tempChart.data.labels = labels;
+      tempChart.data.datasets[0].data = sensorData.map(d => d.t);
+      tempChart.update();
+    }
 
-      updateLatest(sensorData);
-      updateExtremes(sensorData);
+    if (humChart) {
+      humChart.data.labels = labels;
+      humChart.data.datasets[0].data = sensorData.map(d => d.h);
+      humChart.update();
+    }
 
-      createCharts();
-
-      document.getElementById("liveStatus").textContent = "Live";
-
-    } catch (err) {
-      console.error(err);
-
-      document.getElementById("liveStatus").textContent = "Error";
+    if (pressChart) {
+      pressChart.data.labels = labels;
+      pressChart.data.datasets[0].data = sensorData.map(d => d.p);
+      pressChart.update();
     }
   }
 
-  start();
+  function scheduleRefresh() {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+    }
 
+    const refreshMs = Math.max(1000, sampleIntervalUs / 1000);
+    refreshTimer = setInterval(refreshDashboard, refreshMs);
+  }
+
+  async function initDashboard() {
+    try {
+      if (!nodeId) {
+        document.title = "No node selected";
+        document.getElementById("mainTitle").textContent = "No node selected";
+        document.getElementById("extremes").textContent =
+          "No node selected. Open this dashboard as /node/<node_id> or /esp32_bme280/node/<node_id>.";
+        setLiveStatus("No node");
+        createCharts();
+        return;
+      }
+
+      await fetchNodeInfo();
+      sensorData = await fetchData();
+
+      if (sensorData.length) {
+        updateLatest(sensorData);
+        updateExtremes(sensorData);
+        setLiveStatus("Live");
+      } else {
+        clearDisplayedData();
+        setLiveStatus("Waiting for data");
+      }
+
+      createCharts();
+      scheduleRefresh();
+
+    } catch (err) {
+      console.error("initDashboard failed:", err);
+      setLiveStatus("Error");
+      createCharts();
+    }
+  }
+
+  async function refreshDashboard() {
+    try {
+      if (!nodeId) {
+        setLiveStatus("No node");
+        return;
+      }
+
+      await fetchNodeInfo();
+      sensorData = await fetchData();
+
+      if (sensorData.length) {
+        updateLatest(sensorData);
+        updateExtremes(sensorData);
+        setLiveStatus("Live");
+      } else {
+        clearDisplayedData();
+        setLiveStatus("Waiting for data");
+      }
+
+      refreshCharts();
+
+    } catch (err) {
+      console.error("refreshDashboard failed:", err);
+      setLiveStatus("Error");
+    }
+  }
+
+  window.addEventListener("beforeunload", () => {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+    }
+  });
+
+  initDashboard();
 </script>
 </body>
 </html>
