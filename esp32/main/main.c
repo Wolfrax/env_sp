@@ -23,7 +23,7 @@
 #include "esp_crt_bundle.h"
 
 #define DEV_MODE 0 // If set to 1, the device will not go to deep sleep and will print logs to the console for debugging.
-#define SIMULATE_SENSOR 1
+#define SIMULATE_SENSOR 0 // If set to 1, the device will simulate sensor readings instead of reading from the actual sensor, for testing without hardware.
 
 #if SIMULATE_SENSOR
 #include "esp_random.h"
