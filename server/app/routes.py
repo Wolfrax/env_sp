@@ -19,19 +19,23 @@ def make_node_id(node):
     location = safe_id(node.get("location", "unknown"))
     return f"{name}_{location}"
 
-
 def parse_timestamp(timestamp):
     if timestamp is None:
         return datetime.now(timezone.utc)
 
     if isinstance(timestamp, datetime):
-        return timestamp
+        dt = timestamp
+    elif isinstance(timestamp, str):
+        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    else:
+        raise ValueError(f"Unsupported timestamp: {timestamp!r}")
 
-    if isinstance(timestamp, str):
-        return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
 
-    raise ValueError(f"Unsupported timestamp: {timestamp!r}")
-
+    return dt
 
 class TimeWindowStore:
     def __init__(self, file_path, window_days=7):
@@ -240,7 +244,7 @@ def post_data():
         })
 
     except Exception as err:
-        print(f"POST /esp_ps failed: {err}")
+        print(f"POST /esp32_bme280 failed: {err}")
         return jsonify({"status": "error", "message": str(err)}), 400
 
 @bp.route("/nodes", methods=["GET"])

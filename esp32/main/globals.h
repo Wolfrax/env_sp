@@ -13,8 +13,8 @@
 #define SERVER_PORT     "8095"
 #define SERVER_URL      "https://" SERVER_HOST SERVER_PATH
 #define SSID_STR        "SSID_HERE"  // Note that idf.py erase-flash needed when changing SSID or password
-#define WIFI_PW_STR     "PASSWORD_HERE"
-#define LOCATION_STR    "Viltstigen"
+#define WIFI_PW_STR     "PW_HERE"
+#define LOCATION_STR    "Guö"
 
 extern char ip_str[IP_STR_LEN];
 extern char hostname[HOSTNAME_LEN];
